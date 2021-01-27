@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- The above 3 meta tags *must* come first in the head; any other head content must come *after* these tags -->
+  <title>Blue Cross Donation</title>
+
+  <!-- Bootstrap -->
+  <link href="css/bootstrap.min.css" rel="stylesheet">
+  <link href="css/bluecross.css" rel="stylesheet">
+
+  <!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
+  <!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+  <!--[if lt IE 9]>
+      <script src="https://oss.maxcdn.com/html5shiv/3.7.3/html5shiv.min.js"></script>
+      <script src="https://oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
+    <![endif]-->
+</head>
+
+<body>
+  <div class="container">
+    
+      <!-- <div class="col-xs-12 col-sm-8 col-sm-push-2"> -->
+        <div style="display:inline-block; vertical-align: middle;">
+          <img src="images/Blue_Cross.jpg" alt="img" />
+        </div>
+        <!-- <div style="display:inline-block; vertical-align:middle;"> -->
+          <div style="display:inline-block; vertical-align:middle;">
+            <h1 class="text-center" style="display:inline-block; vertical-align:middle;">Blue Cross Donation</h1>
+          </div>
+        <!-- </div> -->
+        <hr />
+      <!-- </div> -->
+    
+    <div class="pet-filter" style="display: flex; justify-content: center;">
+      <button class="btn btn-default btn-Connect" id="btnConnect">Connect</button> &nbsp; &nbsp;
+      <button class="btn btn-default" id="btnSendETH1" style="visibility:hidden;"></button> &nbsp;
+      <button class="btn btn-default" id="btnListDonations" >Start listening for donations</button> &nbsp;
+      <button class="btn btn-default" id="btnWithdraw" disabled>Withdraw</button>    
+    </div>
+    <br />
+    <div id="status">Not connected.</div>
+  </div>
+
+  <p></p>
+  <div style="display: flex; justify-content: left; overflow-x:hidden; overflow-y:scroll; margin-bottom: 25px;" 
+    id="donationsPanel">
+    
+  </div>
+
+  <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
+  <script src="./js/bootstrap.min.js"></script>
+  <script src="./js/web3.min.js"></script>
+  <script src="./js/truffle-contract.min.js"></script>
+  <script src="./js/donation.js"></script>
+</body>
+
+</html>
