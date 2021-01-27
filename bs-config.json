@@ -1,0 +1,6 @@
+{
+  "server": {
+    "baseDir": ["./src", "./build/contracts"]
+  },
+  "startPath": "donation.html"
+}
