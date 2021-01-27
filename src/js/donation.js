@@ -97,6 +97,10 @@ let App = {
     let result = ($(name).length > 0);
     return result;
   },
+  getTimestamp: () => {
+    let timestamp = new Date() / 1000;
+    return timestamp;
+  },
 
   displayConnectedChainId: async (_chainId) => {
     let chainName = "";
@@ -166,8 +170,8 @@ let App = {
   eventAccountsChanged: (accounts) => {
     debugger;
     let connected = ethereum.isConnected();
-    handleAccountsChanged(accounts);
-    App.updateStatus(`Accounts updated. There are is/now ${accounts.length} account(s) available.`);
+    App.handleAccountsChanged(accounts);
+    App.updateStatus(`Accounts updated. There is/are now ${accounts.length} account(s) available.`);
   },
   eventConnected: (connectInfo) => {
     debugger;
@@ -183,10 +187,8 @@ let App = {
     debugger;
     if (App.instances.Donation != null) {
       let instance = App.instances.Donation;
-      let event = instance.Received();
-      event.removeListener(DATA, App.logReceived);
-      event = instance.Withdraw();
-      event.removeListener(DATA, App.logWithdraw);
+      App.listenReceived(instance);
+      App.listenWithdrawn(instance);
     }
     delete App.instances.Donation; // reset instances
     let instance = await App.setupDonationContract();
@@ -196,17 +198,21 @@ let App = {
 
   checkAccountsUpdate: async () => {
     let accounts = await ethereum.request({ method: 'eth_requestAccounts' });
-    handleAccountsChanged(accounts);
+    App.handleAccountsChanged(accounts);
   },
   handleAccountsChanged: (accounts) => {
     // debugger;
     if (accounts.length === 0) {
       // MetaMask is locked or the user has not connected any accounts
       App.disableDonateButton();
+      App.disableListDonationsButton();
+      App.disableWithdrawButton();
     } else {
       App.currentAccount = accounts[0];
       $(LBL_WALLET_ADDRESS).text(accounts[0]);
-     
+      if (App.instances && App.instances.Donation) {
+        $(LBL_CONTRACT_ADDRESS).text(App.instances.Donation.address);
+      }
       App.enableDonateButton();
       App.checkListDonationsButton();
       App.checkWithdrawButton();
@@ -260,7 +266,7 @@ let App = {
 
         // now start listening to Received and Withdraw events
         App.listenReceived(instance);
-        App.listenWithdraw(instance);
+        App.listenWithdrawn(instance);
 
   },
 
@@ -268,10 +274,10 @@ let App = {
     try {
       await App.initWeb3();
       let instance = await App.setupDonationContract();
-      App.listenWithdraw(instance);
+      App.listenWithdrawn(instance);
       await instance.emptyBalance({from: App.currentAccount});
     } catch (error) {
-      let timestamp = new Date() / 1000;
+      let timestamp = App.getTimestamp();
       // use this to break the string into manageable length
       let stdmsg = 'Received 0.0244 ETH from 0x9785bebdC6F928Bc607175ac6D2d6Ac939C49c62.';
       let msg = wordwrap(error.message, stdmsg.length, "<br/>\n", true);
@@ -331,11 +337,11 @@ let App = {
         await x();
       }
     } catch (error) {
-      let timestamp = new Date() / 1000;
+      let timestamp = App.getTimestamp();
       App.updateLog(timestamp, "error showing log: " + error.message);
     }
   },
-  logWithdraw: async (data) => {
+  logWithdrawn: async (data) => {
     debugger;
     try {
       let amount = web3.utils.fromWei(`${data.args.amount}`, "ether");
@@ -351,7 +357,7 @@ let App = {
       }
       await x();
     } catch (error) {
-      let timestamp = new Date() / 1000;
+      let timestamp = App.getTimestamp();
       App.updateLog(timestamp, "error showing log: " + error.message);
     }
   },
@@ -359,6 +365,8 @@ let App = {
   listenReceived: (instance) => {
     // Calling this more than once would cause duplicate events to be displayed
     debugger;
+    let timestamp = App.getTimestamp();
+    App.updateLog(timestamp, "Adding received listener...")
     const event = instance.Received();
     let listeners = event.listeners(DATA);
     for(let listener in listeners) {
@@ -367,21 +375,27 @@ let App = {
       }
     }
     event.on(DATA, App.logReceived);
+    timestamp = App.getTimestamp();
+    App.updateLog(timestamp, "Received listener added.")
     let listeners2 = event.listeners(DATA);
     if (listeners != listeners2) {}
   },
-  listenWithdraw: (instance) => {
+  listenWithdrawn: (instance) => {
     // Calling this more than once would cause duplicate events to be displayed
     debugger;
-    const event = instance.Withdraw();
+    let timestamp = App.getTimestamp();
+    App.updateLog(timestamp, "Adding withdrawn listener...");
+    const event = instance.Withdrawn();
     let listeners = event.listeners(DATA);
     for(let listener in listeners) {
-      if (listener == App.logWithdraw) {
-        event.removeListener(DATA, App.logWithdraw);
+      if (listener == App.logWithdrawn) {
+        event.removeListener(DATA, App.logWithdrawn);
       }
     }
-    event.removeListener(DATA, App.logWithdraw);
-    event.on(DATA, App.logWithdraw);
+    event.removeListener(DATA, App.logWithdrawn);
+    event.on(DATA, App.logWithdrawn);
+    timestamp = App.getTimestamp();
+    App.updateLog(timestamp, "Withdrawn listener added.");
   },
 
   // define first so it's available to everyone
@@ -417,10 +431,6 @@ let App = {
 
       // event subscription
       debugger;
-      // const event = instance.Received();
-      // event.once(DATA, (data) => {
-      //   console.log(data);
-      // });
 
       let amountToSend = $(ED_ETHSENDVALUE).val();
       let ETHdata = {
@@ -429,6 +439,7 @@ let App = {
       };
       // debugger;
       let results = await instance.donateETH(ETHdata);
+      App.updateStatus("donateETH call completed.");
     } catch (error) {
       App.updateStatus("donateETH error: " + error.message);
     }
@@ -464,11 +475,12 @@ let App = {
     debugger;
     App.initWeb3Provider();
     if (window.ethereum) {
-      ethereum.enable();
+      await ethereum.enable();
     }
     updateConnectionStatus();
-    let accounts = await ethereum.request({ method: 'eth_requestAccounts' });
-    handleAccountsChanged(accounts);
+    // let accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+    // handleAccountsChanged(accounts);
+    App.checkAccountsUpdate();
     $(BTN_CONNECT).click(App.handleConnect); // hook up the connect button
     App.hookEvents();
     if (App.elementExists(BTN_LISTDONATIONS)) {
@@ -504,13 +516,13 @@ let App = {
       App.web3Provider = window.ethereum;     
       try {
         debugger;
-        ethereum.enable();
-        App.hookEvents();
+
         // if this is already connected, it might not call the existing hooked events
-        let accounts = await ethereum.request({ method: 'eth_requestAccounts' });
-        if (accounts.length > 0) { // so, call handleAccountsChanged again.
-          App.handleAccountsChanged(accounts);
-        }
+        // let accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+        // App.handleAccountsChanged(accounts);
+        App.checkAccountsUpdate();
+        App.hookEvents();
+
         // App.updateStatus("Call to eth_requestAccounts completed.");
         // debugger;
       } catch (error) {       
