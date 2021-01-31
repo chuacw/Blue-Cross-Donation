@@ -4,8 +4,9 @@ https://medium.com/better-programming/ethereum-dapps-how-to-listen-for-events-c4
 https://bitsofco.de/calling-smart-contract-functions-using-web3-js-call-vs-send/
 
 Ethereum events: 
-1) https://docs.metamask.io/guide/ethereum-provider.html#events
-2) https://eips.ethereum.org/EIPS/eip-1193
+https://docs.metamask.io/guide/ethereum-provider.html#events
+https://docs.metamask.io/guide/rpc-api.html
+https://eips.ethereum.org/EIPS/eip-1193
 
 Author: chuacw, Singapore, Singapore
 Date: 23 Jan - 30 Jan 2021
@@ -45,7 +46,7 @@ const DISCONNECT = "disconnect";
 
 var eventsHooked = false;
 
-function compareAddress(addr1, addr2) {
+const compareAddress = (addr1, addr2) => {
   let result = false;
   if (addr1 && addr2) {
     let _addr1 = addr1.toLowerCase();
@@ -55,7 +56,7 @@ function compareAddress(addr1, addr2) {
   return result;
 }
 
-function sleep(ms) {
+const sleep = (ms) => {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
@@ -137,7 +138,7 @@ let App = {
 
   displayConnectedChainId: (_chainId) => {
     let chainName = App.getChainName(_chainId);
-    App.updateStatus(`Connected to the Ethereum network chain id: ${chainName}.`);
+    App.updateStatus(`Connected to the Ethereum network id: ${chainName}.`);
   },
   displayDisconnected: () => {
     App.updateStatus("Disconnected.");
@@ -354,7 +355,6 @@ let App = {
     let logs = await web3.eth.getPastLogs({fromBlock: 0, toBlock: 'latest', address: address, 
       topics: [topic]});
     // See https://howchoo.com/code/learn-the-slow-and-fast-way-to-append-elements-to-the-dom
-    let c = document.createDocumentFragment(); 
     for (let i=0; i<logs.length; i++) {
       let log = logs[i];
       let data = log.data;
@@ -366,13 +366,8 @@ let App = {
 
       let msg = fn(decodedLog);
 
-      // App.updateLog(timestamp, msg);
-      let line = App.getUpdateLog(timestamp, msg);
-      var e = document.createElement("div");
-      e.innerHTML = line;
-      c.appendChild(e);
+      App.updateLog(timestamp, msg);
     }
-    App.appendLog(c);
     
   },
   handleListDonations: async (event) => {
@@ -697,7 +692,7 @@ let App = {
   updateAdminFee: (adminFee) => { // takes adminFee in wei
     debugger;
     let amount = App.weiToEther(adminFee);
-    $(LBL_ADMINFee).text(`${amount} ETH.`);
+    $(LBL_ADMINFee).text(`${amount} ETH`);
   },
   updateRefundOk: (refundOk) => {
     let value = refundOk?"yes": "no";
