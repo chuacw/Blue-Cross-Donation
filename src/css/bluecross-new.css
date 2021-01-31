@@ -1,6 +1,7 @@
 #status {
     background: #aaa;
     border-top: solid 2px #888;
+    padding-top: 10em;
     bottom: 0;
     left: 0;
     margin: 0;
@@ -17,6 +18,7 @@ div.center1 {
   display: flex; 
   justify-content: center;
 }
+
 div.center2 {
   display: table-cell;
   vertical-align: middle;
@@ -24,7 +26,29 @@ div.center2 {
   /*
   border: 1px solid red;
   display: flex;
-  */
+  */ 
+}
+
+div.first-row {
+  margin: 0 auto;
+}
+
+/* this needs to be scrollable if dynamic content is to large */
+.middle-row {
+  overflow-y: scroll;
+  /* background: blue; */
+  flex:1;
+}     
+
+.container {
+  position: absolute;
+  display:flex;
+  flex-direction: column;
+  left: 0;
+  top: 0;
+  width: 100%;
+  /* background: green; */
+  max-height: 100%;
 }
 
 hr {

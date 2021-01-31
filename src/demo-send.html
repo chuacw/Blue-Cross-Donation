@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Smart Contract demo by Chua Chee Wee</title>
+
+  <!-- Bootstrap -->
+  <link href="css/bootstrap.min.css" rel="stylesheet">
+  <link href="css/bluecross.css" rel="stylesheet">
+
+  <!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
+  <!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+  <!--[if lt IE 9]>
+      <script src="https://oss.maxcdn.com/html5shiv/3.7.3/html5shiv.min.js"></script>
+      <script src="https://oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
+    <![endif]-->
+</head>
+
+<body>
+  <div class="container">
+    <div class="row">
+      <div class="col-xs-12 col-sm-8 col-sm-push-2">
+        <div style="display:inline-block; vertical-align: middle;">
+          <img src="images/Blue_Cross.jpg" alt="img" style="display: none;" />
+        </div>
+        <div style="display:inline-block; vertical-align:middle;">
+          <div style="display:inline-block; vertical-align:middle;">
+            <h1 class="text-center" style="display:inline-block; vertical-align:middle;">
+              
+            </h1>
+          </div>
+        </div>
+        <hr />
+        <br />
+      </div>
+    </div>
+    <div class="pet-filter" style="display: flex; justify-content: center;">
+      <button class="btn btn-default btn-Connect" id="btnConnect">Connect</button> &nbsp; &nbsp;
+    </div>
+    <br />
+    <div id="status">Not connected.</div><br />
+  </div>
+
+  <div class="center1">
+    <div class="center2" >
+      <label id="WalletAddressLabel">Wallet address: </label>
+      <label id="WalletAddressValue">Please wait...</label> <br/>
+      <label id="ContractAddressLabel">Contract address: </label>
+      <label id="ContractAddressValue">Please connect to a Web3 provider</label> <br/>
+      <label for="edETHSendValue">ETH to send: </label>
+      <input style='width: 17em' type="number" id="edETHSendValue" min="0.01" max="10.00" step=".01" value="0.06"> &nbsp; &nbsp;
+      <button class="btn btn-default" id="btnSendETH" disabled>Send ETH</button> &nbsp;
+
+    </div>
+  </div>
+
+  <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
+  <script src="./js/bootstrap.min.js"></script>
+  <script src="./js/web3.min.js"></script>
+  <script src="./js/truffle-contract.min.js"></script>
+  <script src="./js/donation.js"></script>
+</body>
+
+</html>

@@ -4,6 +4,10 @@ const infuraKey = configData.InfuraProjectID; // this is Infura Project ID
 const mnemonic = configData.mnemonic;
 
 module.exports = {
+  // see https://ethereum.stackexchange.com/questions/19641/how-to-set-the-timeout-for-truffle-tests-before-block
+  mocha: {
+    enableTimeouts: false
+  },
   networks: {
     rinkeby: {
       // key is currently only configured for Rinkeby. To make it work on Kovan, add another key
@@ -34,10 +38,5 @@ module.exports = {
   ],
   api_keys: {
     etherscan: `${configData.EtherscanAPI}`
-  },
-  // see https://ethereum.stackexchange.com/questions/19641/how-to-set-the-timeout-for-truffle-tests-before-block
-  mocha: {
-    enableTimeouts: false,
-    before_timeout: 120000 // Here is 2min but can be whatever timeout is suitable for you.
   }  
 };
