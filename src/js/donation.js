@@ -209,7 +209,7 @@ let App = {
     return msg;
   },
   getRefundedMsg: (event) => {
-    debugger;
+    // debugger;
     let receiver = event.receiver; // note, sender, not receiver!!!
     let amount = web3.utils.fromWei(`${event.amount}`, "ether");
     let msg = `Refunded ${amount} ETH to ${receiver}.`;
@@ -585,7 +585,7 @@ let App = {
             {type: "uint256", name: "count"}
           ],
           handler: (decodedLog) => {
-            debugger;
+            // debugger;
             let msg = App.getWithdrawnMsg(decodedLog);
             return msg;
           } 
@@ -608,63 +608,6 @@ let App = {
           let msg = App.getReceivedETHMsg(decodedLog);
           return msg;
         });
-
-        // topic = web3.eth.abi.encodeEventSignature("Refunded(address,uint256,uint256)");
-        // typesArray = [
-        //   {type: "address", name: "receiver", indexed: true},
-        //   {type: "uint256", name: "amount"},
-        //   {type: "uint256", name: "count"}
-        // ];
-        topicTypes = lookupEventSignatureInfoType("Refunded", App.contracts.Donation.events);
-        await App.displayLog(address, topicTypes.topic, topicTypes.typesArray, (decodedLog) => {
-          let msg = App.getRefundedMsg(decodedLog);
-          return msg;
-        });
-        // typesArray = [
-        //   {type: "bool", name: "refundOk"}
-        // ]
-        topicTypes = lookupEventSignatureInfoType("RefundStatusChanged", App.contracts.Donation.events);
-        // topic = web3.eth.abi.encodeEventSignature("RefundStatusChanged(bool)"); 
-        // if (topic != topicTypes.topic) {
-        //   console.error("RefundStatusChanged topic doesn't match!!!");
-        // }        
-        await App.displayLog(address, topicTypes.topic, topicTypes.typesArray, (decodedLog) => {
-          let msg = App.getRefundOkMsg(decodedLog);           
-          return msg;
-        });
-
-        debugger;
-        typesArray = [
-          {type: 'address', name: 'receiver', indexed: true}, 
-          {type: 'uint256', name: 'amount'},
-          {type: "uint256", name: "count"}
-        ];
-        // topic = web3.eth.abi.encodeEventSignature("Withdrawn(address,uint256,uint256)");
-        topicTypes = lookupEventSignatureInfoType("Withdrawn", App.contracts.Donation.events);       
-        if (topic != topicTypes.topic) {
-          console.error("Withdrawn topic doesn't match!!!");
-        }        
-        debugger;
-        await App.displayLog(address, topicTypes.topic, typesArray, (decodedLog) => {
-          debugger;
-          let msg = App.getWithdrawnMsg(decodedLog);
-          return msg;
-        });
-
-        // typesArray = [
-        //   {type: 'uint256', name: 'amount'}
-        // ];
-        topic = web3.eth.abi.encodeEventSignature("AdminFeeChanged(uint256)");
-        debugger;
-        topicTypes = lookupEventSignatureInfoType("AdminFeeChanged", App.contracts.Donation.events);
-        if (topic != topicTypes.topic) {
-          console.error("AdminFeeChanged topic doesn't match!!!");
-        }        
-        await App.displayLog(address, topicTypes.topic, topicTypes.typesArray, (decodedLog) => {
-          App.updateAdminFee(decodedLog.amount);
-          let msg = App.getAdminFeeChangedMsg(decodedLog);
-          return msg;
-        });
 */
 
         // now start listening to events: Received,  Withdraw, Refund, etc..
@@ -682,25 +625,16 @@ let App = {
         let adminFee = web3.utils.toHex( web3.utils.toWei(`${amount}`, "ether") );
         await instance.setAdminFee(adminFee, {from: App.currentAccount});
       } catch (error) {
-        App.updateStatus(error.message);
-        throw error.message;
+        let msg;
+        if (typeof error == "object") {
+          msg = error.message;
+        } else {
+          msg = error;
+        }
+        App.updateStatus(msg);
+        throw msg;
       }
     });      
-    // set admin fee code
-    // try {
-    //   let instance = await App.setupDonationContract();
-    //   let amount = $(ED_ADMINFEE).val().trim();
-    //   let adminFee = web3.utils.toHex( web3.utils.toWei(`${amount}`, "ether") );
-    //   await instance.setAdminFee(adminFee, {from: App.currentAccount});
-    // } catch(error) {
-    //   debugger;
-    //   let timestamp = App.getTimestamp();
-    //   let msg = error;
-    //   if (typeof error.message != "undefined") {
-    //     msg = error.message;
-    //   }
-    //   App.updateLog(timestamp, msg);
-    // }
   },
   handleToggleRefund: async () => {
     try {
@@ -723,7 +657,7 @@ let App = {
       const event = instance.Withdrawn();
       event.once(EVENT_NAME, (data) => {
         // Withdraw event
-        debugger;
+        // debugger;
         update = true;
         amount = data.args.amount;
         receiver = data.args.receiver;
@@ -806,7 +740,7 @@ let App = {
     }    
   },
   logReceived: async (data) => {
-    debugger;
+    // debugger;
     try {
       let sender = data.args.sender;
       let amount = web3.utils.fromWei(`${data.args.amount}`, "ether");
@@ -820,9 +754,6 @@ let App = {
           let blockNo = data.blockNumber;
           let block = await web3.eth.getBlock(blockNo);
           let timestamp = block.timestamp;
-          // let sender = data.args.sender;
-          // let amount = web3.utils.fromWei(`${data.args.amount}`, "ether");
-          // let msg = `Received ${amount} ETH from ${sender}.`;            
           let msg = App.getReceivedETHMsg(data.args);
           App.updateLog(timestamp, msg);
         }
@@ -836,7 +767,7 @@ let App = {
     }
   },
   logRefunded: async (data) => {
-    debugger;
+    // debugger;
     try {
       let x = async function() {
         let tx = data.transactionHash;
@@ -853,7 +784,7 @@ let App = {
     }
   },
   logRefundOk: async (data) => {
-    debugger;
+    // debugger;
     try {
       let x = async function() {
         let tx = data.transactionHash;
@@ -872,7 +803,7 @@ let App = {
     }
   },
   logWithdrawn: async (data) => {
-    debugger;
+    // debugger;
     try {
       let amount = web3.utils.fromWei(`${data.args.amount}`, "ether");
       let x = async function() {
@@ -880,9 +811,6 @@ let App = {
         let blockNo = data.blockNumber;
         let block = await web3.eth.getBlock(blockNo);
         let timestamp = block.timestamp;
-        // let receiver = data.args.receiver;
-        // let amount = web3.utils.fromWei(`${data.args.amount}`, "ether");
-        // let msg = `Withdrawn ${amount} ETH to ${receiver}.`;
         let msg = App.getWithdrawnMsg(data.args);           
         App.updateLog(timestamp, msg);
       }
@@ -1102,43 +1030,6 @@ let App = {
       }
     }
     return App.instances.Donation;
-  },
-  setupWSSProvider: (_chainId) => {
-    debugger;
-    let localProvider, url;
-    try {
-      let chainId = parseInt(_chainId);
-      switch(chainId) {
-        case 1: 
-          chainName = "mainnet";
-          url = `wss://mainnet.infura.io/ws/v3/${infuraInfo.InfuraProjectID}`;
-          break; 
-        case 3: 
-          chainName = "ropsten";
-          url = `wss://ropsten.infura.io/ws/v3/${infuraInfo.InfuraProjectID}`
-          break;
-        case 4: 
-          chainName = "rinkeby";
-          url = `wss://rinkeby.infura.io/ws/v3/${infuraInfo.InfuraProjectID}`;
-          break;
-        case 5: 
-          chainName = "goerli";
-          url = `wss://goerli.infura.io/ws/v3/${infuraInfo.InfuraProjectID}`;
-          break;
-        case 42: 
-          chainName = "kovan";
-          url = `wss://kovan.infura.io/ws/v3/${infuraInfo.InfuraProjectID}`;
-          break;
-        default:
-          localProvider = "";
-      }
-    } catch (error) {
-    }
-    if (localProvider != "") {
-      localProvider = new Web3.providers.WebsocketProvider(url);
-      App.wssProvider = localProvider;
-      App.web3wss = new Web3(localProvider);
-    }
   },
   updateConnectionStatus: () => {
     try {
