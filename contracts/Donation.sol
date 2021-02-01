@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-// author: chuacw, 24 Jan - 31 Jan 2021, Singapore, Singapore
+// author: chuacw, 24 Jan - 1 Feb 2021, Singapore, Singapore
 
 pragma solidity ^0.7.4;
 
@@ -18,7 +18,7 @@ contract Donation {
 
     // Declare events
     event Received(address indexed sender, uint256 amount, uint256 count);
-    event Refunded(address indexed sender, uint256 amount, uint256 count);
+    event Refunded(address indexed receiver, uint256 amount, uint256 count);
     event Withdrawn(address indexed receiver, uint256 amount, uint256 count);
     
     event AdminFeeChanged(uint256 amount);

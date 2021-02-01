@@ -2,5 +2,6 @@
   "server": {
     "baseDir": ["./src", "./build/contracts"]
   },
-  "startPath": "donation.html"
+  "startPath": "donation.html",
+  "notify": false
 }

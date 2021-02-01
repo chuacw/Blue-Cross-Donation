@@ -9,21 +9,23 @@ https://docs.metamask.io/guide/rpc-api.html
 https://eips.ethereum.org/EIPS/eip-1193
 
 Author: chuacw, Singapore, Singapore
-Date: 23 Jan - 30 Jan 2021
+Date: 23 Jan - 2 Feb 2021
 */
 "strict mode"; 
 
 const BTN_CONNECT = "#btnConnect";
 
-const BTN_SENDETH = "#btnSendETH";
+const BTN_DONATE_ETH = "#btnDonateETH";
 const BTN_REFUNDETH = "#btnRefundETH";
 const ED_ETHSENDVALUE = "#edETHSendValue";
 
-const BTN_LISTDONATIONS = "#btnListDonations";
-const BTN_SETADMINFEE = "#btnSetAdminFee";
+const BTN_LISTEN_EVENTS = "#btnListenEvents";
+const BTN_SET_ADMIN_FEE = "#btnSetAdminFee";
 const ED_ADMINFEE = "#edAdminFee";
 const BTN_WITHDRAW = "#btnWithdraw";
-const BTN_TOGGLEREFUND = "#btnToggleRefund";
+const BTN_TOGGLE_REFUND = "#btnToggleRefund";
+
+const CLASS_BLINKER = ".btn-blinkme";
 
 const PNL_DONATIONS = "#donationsPanel";
 const LBL_WALLET_ADDRESS = "#WalletAddressValue";
@@ -34,17 +36,32 @@ const LBL_NETWORK_NAME = "#NetworkNameValue";
 const LBL_ADMINFee = "#AdminFeeValue";
 const LBL_REFUNDOK = "#RefundOkValue";
 
+const STATUSBAR = "#status";
+
+// event message names
 const CLICK = "click";
-const DATA = "data";
+const EVENT_NAME = "data";
 const DISABLED = "disabled";
 
-
+// Web3 events
 const CHAINCHANGED = "chainChanged";
 const ACCOUNTSCHANGED = "accountsChanged";
 const CONNECT = "connect";
 const DISCONNECT = "disconnect";
 
-var eventsHooked = false;
+const DIAGNOSTICS = false;
+
+let myBlinkingButton, infuraInfo;
+
+function blinker() {
+  $(BTN_LISTEN_EVENTS).fadeOut(500);
+  $(BTN_LISTEN_EVENTS).fadeIn(500);
+}
+function startBlinker() {
+  myBlinkingButton = setInterval(blinker, 1000);
+  setTimeout(() => clearInterval(myBlinkingButton), 5000);
+}
+
 
 const compareAddress = (addr1, addr2) => {
   let result = false;
@@ -71,14 +88,84 @@ function wordwrap( str, width, brk, cut ) {
   return str.match( RegExp(regex, 'g') ).join( brk );
 }
 
-Date.prototype.timeNow = function(){     
-  return ((this.getHours() < 10)?"0":"") + ((this.getHours()>12)?(this.getHours()-12):this.getHours()) +":"+ ((this.getMinutes() < 10)?"0":"") + this.getMinutes() +":"+ ((this.getSeconds() < 10)?"0":"") + this.getSeconds() + ((this.getHours()>12)?('PM'):'AM'); 
+// do not use arrow syntax for this!
+Date.prototype.timeNow = function() {
+  let H = this.getHours(); 
+  let M = this.getMinutes();    
+  let S = this.getSeconds(); 
+  let hhprefix = ""; // (H>1?((H < 10)?"0":""):"");
+  let hh = (H>12)?(H-12):(H>1?H:12);
+  let mm = ((M < 10)?"0":"") + M;
+  let ssprefix = ((S < 10)?"0":"");
+  let ampm = (H>=12)?"PM":"AM";
+  let result = hhprefix + hh + ":" + mm + ":" + ssprefix + S + " " + ampm;
+  return result; 
 };
+
+function constructEventSignatureInfoType(eventInfo) {
+  // "Received(address,uint256,uint256)"
+  let _typeInfoArray = eventInfo.inputs;
+  // Oddly, some events do not have a signature defined. 
+  // See the Withdrawn event
+  let signatureUndefined = (typeof eventInfo.signature == "undefined");
+  let rawSignature, topicValue;
+  if (signatureUndefined) {
+    console.error(`${eventInfo.name} do not have an event signature.`);
+    rawSignature = eventInfo.name + "(";
+  }
+  let typesArrayValue = [];
+  for(let i=0; i<_typeInfoArray.length; i++) {
+      let typeInfo = _typeInfoArray[i];
+      let result = {
+          type: typeInfo.internalType, 
+          name: typeInfo.name, 
+          indexed: typeInfo.indexed
+      };
+      typesArrayValue.push(result);
+      if (signatureUndefined) {
+        rawSignature = rawSignature + typeInfo.type;
+        if (i < _typeInfoArray.length-1) {
+            rawSignature = rawSignature + ","
+        }    
+      }
+  }
+  if (signatureUndefined) { 
+    rawSignature = rawSignature + ")";
+    topicValue = web3.eth.abi.encodeEventSignature(rawSignature); 
+  } else {
+    topicValue = eventInfo.signature;
+  }  
+  let result = {topic: topicValue, typesArray: typesArrayValue};
+  return result;
+}
+
+function lookupEventSignatureInfoType(name, dict) {
+  let result;
+  for (let key in dict) {
+      let value = dict[key];
+      if (value.name == name) {
+          result = constructEventSignatureInfoType(value);
+          break;
+      }
+  }
+  return result;
+}
+
+function getAllTopics(allTopicTypes) {
+  let result = [];
+  for (let i=0; i<allTopicTypes.length; i++) {
+    let topicTypes = allTopicTypes[i];
+    result.push(topicTypes.topic);
+  }
+  return result;
+}
 
 let App = {
   web3Provider: null,
   contracts: {},
   instances: {},
+  wssProvider: "wss://localhost:8545",
+  web3wss: {},
 
   elementExists: (name) => {
     let result = ($(name).length > 0);
@@ -121,10 +208,14 @@ let App = {
     let msg = `Received ${amount} ETH from ${sender}.`;
     return msg;
   },
+  getRefundedMsg: (event) => {
+    debugger;
+    let receiver = event.receiver; // note, sender, not receiver!!!
+    let amount = web3.utils.fromWei(`${event.amount}`, "ether");
+    let msg = `Refunded ${amount} ETH to ${receiver}.`;
+    return msg;
+  },
   getRefundOkMsg: (event) => {
-    if (typeof event.RefundOk != "undefined") {
-      event.refundOk = event.RefundOk; // temp fix;
-    } 
     let yesno = (event.refundOk?"yes":"no");
     let msg = `Refund allowed: ${yesno}.`;
     return msg;           
@@ -148,15 +239,20 @@ let App = {
     try {    
       let chainId = parseInt(_chainId);
       switch(chainId) {
-        case 1: chainName = "mainnet";
+        case 1: 
+          chainName = "mainnet";
           break; 
-        case 3: chainName = "ropsten";
+        case 3: 
+          chainName = "ropsten";
           break;
-        case 4: chainName = "rinkeby";
+        case 4: 
+          chainName = "rinkeby";
           break;
-        case 5: chainName = "goerli";
+        case 5: 
+          chainName = "goerli";
           break;
-        case 42: chainName = "kovan";
+        case 42: 
+          chainName = "kovan";
           break;
         default:
           chainName = _chainId;
@@ -167,11 +263,11 @@ let App = {
     return chainName;    
   },
   disableDonateButton: () => {
-    App.disableButton(BTN_SENDETH);
+    App.disableButton(BTN_DONATE_ETH);
   },
   enableDonateButton: () => {
     App.disableDonateButton();
-    App.enableButton(BTN_SENDETH, App.handleSendETH);
+    App.enableButton(BTN_DONATE_ETH, App.handleSendETH);
     App.enableConnectButton();
   },
   disableRefundButton: () => {
@@ -198,14 +294,14 @@ let App = {
   },
   checkListDonationsButton: async() => {
     let instance = await App.setupDonationContract();
-    let owner = await instance.owner();
-    compareAddress(App.currentAccount, owner) ? App.enableListDonationsButton(): App.disableListDonationsButton();   
+    let owner = await instance.owner.call();
+    compareAddress(App.currentAccount, owner) ? App.enableListEventsButton(): App.disableListDonationsButton();   
   },
   disableListDonationsButton: () => {
-    App.disableButton(BTN_LISTDONATIONS);
+    App.disableButton(BTN_LISTEN_EVENTS);
   },  
-  enableListDonationsButton: () => {
-    App.enableButton(BTN_LISTDONATIONS, App.handleListDonations);
+  enableListEventsButton: () => {
+    App.enableButton(BTN_LISTEN_EVENTS, App.handleListenEvents);
   },
   enableConnectButton: () => {
     App.enableButton(BTN_CONNECT, App.handleConnect);
@@ -241,16 +337,16 @@ let App = {
     App.enableButton(BTN_WITHDRAW, App.handleWithdraw);
   },
   disableToggleRefundButton: () => {
-    App.disableButton(BTN_TOGGLEREFUND);
+    App.disableButton(BTN_TOGGLE_REFUND);
   },
   enableToggleRefundButton: () => {
-    App.enableButton(BTN_TOGGLEREFUND, App.handleToggleRefund);
+    App.enableButton(BTN_TOGGLE_REFUND, App.handleToggleRefund);
   },
   disableSetAdminFeeButton: () => {
-    App.disableButton(BTN_SETADMINFEE);
+    App.disableButton(BTN_SET_ADMIN_FEE);
   },
   enableSetAdminFeeButton: () => {
-    App.enableButton(BTN_SETADMINFEE, App.handleSetAdminFee);
+    App.enableButton(BTN_SET_ADMIN_FEE, App.handleSetAdminFee);
   },
   toggleRefundButton: async () => {
     if (App.instances == undefined || App.instances.Donation == undefined) {
@@ -294,8 +390,10 @@ let App = {
     if (App.instances && typeof App.instances.Donation == "undefined") {
       App.disableListDonationsButton();
     } else {
-      App.enableListDonationsButton();
+      App.enableListEventsButton();
     }
+    startBlinker();
+    
   },
   updateNetworkName: (chainId) => {
     if (App.elementExists(LBL_NETWORK_NAME)) {
@@ -315,7 +413,7 @@ let App = {
     }
     return balance;
   },
-  showBalance: async () => {
+  updateBalance: async () => {
     let balance = await App.getBalance();
     // update contract balance
     $(LBL_CONTRACT_BALANCE).text(`${balance} ETH`);
@@ -345,12 +443,59 @@ let App = {
         // show owner address
         let owner = await instance.owner.call(); // await instance.owner.call(); // working
         $(LBL_OWNER_ADDRESS).text(owner);
-        await App.showBalance();
+        await App.updateBalance();
       }
       await App.checkAdminButtons();
     }
   },
-
+  displayAllLogs: async (address, topicWithFnArray) => {
+    let dict = new Object();
+    for (let i=0; i<topicWithFnArray.length; i++) {
+      let element = topicWithFnArray[i];
+      let key = element.topic.toLowerCase();
+      dict[key] = element;
+      if (DIAGNOSTICS) {
+        console.log(`key: ${key}`);
+      }
+    }
+    let logs = await web3.eth.getPastLogs({fromBlock: 0, toBlock: "latest",
+      address: address});
+    for (let i=0; i<logs.length; i++) {
+      let log = logs[i];
+      let data = log.data;
+      let topicKey = log.topics[0].toLowerCase();
+      if (DIAGNOSTICS) {
+        console.log(`log topic: ${topicKey}`);
+      }
+      let element = dict[topicKey];
+      
+      if (typeof element == "undefined") {
+        if (DIAGNOSTICS) {
+          console.error(`unknown topic: ${topicKey}`);
+        }
+        continue; // unknown event
+      }
+      let typesArray = element.typesArray;
+      let decodedLog = web3.eth.abi.decodeLog(typesArray, data, log.topics.slice(1));
+      let blockNo = log.blockNumber;
+      let block = await web3.eth.getBlock(blockNo);
+      let timestamp = block.timestamp;
+      let fn = element.handler;
+      try {
+        let msg = fn(decodedLog);
+        App.updateLog(timestamp, msg);
+      } catch (error) {
+        let msg;
+        let timestamp = App.getTimestamp();
+        if (typeof error === "object") {
+          msg = error.message;
+        } else {
+          msg = error;
+        }
+        App.updateLog(timestamp, "Error during decoding: " + msg);
+      }
+    }
+  },
   displayLog: async (address, topic, typesArray, fn) => {
     let logs = await web3.eth.getPastLogs({fromBlock: 0, toBlock: 'latest', address: address, 
       topics: [topic]});
@@ -364,82 +509,198 @@ let App = {
       let block = await web3.eth.getBlock(blockNo);
       let timestamp = block.timestamp;
 
-      let msg = fn(decodedLog);
-
-      App.updateLog(timestamp, msg);
+      try {
+        let msg = fn(decodedLog);
+        App.updateLog(timestamp, msg);
+      } catch (error) {
+        let timestamp = App.getTimestamp();
+        App.updateLog(timestamp, "Error during decoding: " + error);
+      }
     }
     
   },
-  handleListDonations: async (event) => {
+  handleListenEvents: async (event) => {
 
-        // debugger;
+
         App.updateStatus("Listening for events...");
 
         let instance = await App.setupDonationContract();
         // list all previous donations
         let address = instance.address;
         let topic, logs;
-        // topic = web3.eth.abi.encodeEventSignature("Received(address,uint256,uint256)");
-        topic = web3.eth.abi.encodeEventSignature("Received(address,uint256,uint256)");
-        // debugger;
+      
         // https://ethereum.stackexchange.com/questions/87653/how-to-decode-log-event-of-my-transaction-log
-
-        let typesArray;
-        typesArray = [
-          {type: 'address', name: 'sender', indexed: true}, 
-          {type: 'uint256', name: 'amount'},
-          {type: 'uint256', name: 'count'}
-        ];
-        await App.displayLog(address, topic, typesArray, (decodedLog) => {
+        let typesArray, topicTypes;
+        let allTopicTypes = [];
+        let AdminFeeTypes = lookupEventSignatureInfoType("AdminFeeChanged", App.contracts.Donation.events);
+        let ReceivedTypes = lookupEventSignatureInfoType("Received",  App.contracts.Donation.events);
+        let RefundedTypes = lookupEventSignatureInfoType("Refunded", App.contracts.Donation.events);
+        let RefundStatusChangedTypes = lookupEventSignatureInfoType("RefundStatusChanged", App.contracts.Donation.events);
+        let WithdrawnTypes1 = lookupEventSignatureInfoType("Withdrawn", App.contracts.Donation.events);       
+        let AdminFeeChangedHandler = {
+          topic: AdminFeeTypes.topic, 
+          typesArray: AdminFeeTypes.typesArray,
+          handler: (decodedLog) => {
+            let msg = App.getAdminFeeChangedMsg(decodedLog);
+            return msg;
+          }
+        };
+        let ReceivedHandler = {
+          topic: ReceivedTypes.topic,
+          typesArray: ReceivedTypes.typesArray,
+          handler: (decodedLog) => {
+            let msg = App.getReceivedETHMsg(decodedLog);
+            return msg;
+          }
+        };
+        let RefundedHandler = {
+          topic: RefundedTypes.topic,
+          typesArray: RefundedTypes.typesArray,
+          handler: (decodedLog) => {
+            let msg = App.getRefundedMsg(decodedLog);
+            return msg;
+          } 
+        };
+        let RefundStatusChangedHandler = {
+          topic: RefundStatusChangedTypes.topic,
+          typesArray: RefundStatusChangedTypes.typesArray,
+          handler: (decodedLog) => {
+            let msg = App.getRefundOkMsg(decodedLog);           
+            return msg;
+          } 
+        };
+        let WithdrawnHandler1 = {
+          topic: WithdrawnTypes1.topic,
+          typesArray: WithdrawnTypes1.typesArray,
+          handler: (decodedLog) => {
+            let msg = App.getWithdrawnMsg(decodedLog);
+            return msg;
+          }
+        };
+        let WithdrawnHandler2 = {
+          topic: web3.eth.abi.encodeEventSignature("Withdrawn(address,uint256,uint256)"),
+          typesArray: [
+            {type: 'address', name: 'receiver', indexed: true}, 
+            {type: 'uint256', name: 'amount'},
+            {type: "uint256", name: "count"}
+          ],
+          handler: (decodedLog) => {
+            debugger;
+            let msg = App.getWithdrawnMsg(decodedLog);
+            return msg;
+          } 
+        };
+        let topicHandlers = [AdminFeeChangedHandler, ReceivedHandler, RefundedHandler,
+          RefundStatusChangedHandler, WithdrawnHandler1, WithdrawnHandler2];
+        await App.displayAllLogs(address, topicHandlers);
+/* 
+        // topic = web3.eth.abi.encodeEventSignature("Received(address,uint256,uint256)");
+        // typesArray = [
+        //   {type: 'address', name: 'sender', indexed: true}, 
+        //   {type: 'uint256', name: 'amount'},
+        //   {type: 'uint256', name: 'count'}
+        // ];
+        topicTypes = lookupEventSignatureInfoType("Received",  App.contracts.Donation.events);
+        // if (topic != topicTypes.topic) {
+        //   console.error("topic doesn't match!!!");
+        // }        
+        await App.displayLog(address, topicTypes.topic, topicTypes.typesArray, (decodedLog) => {
           let msg = App.getReceivedETHMsg(decodedLog);
           return msg;
         });
 
-        typesArray = [
-          {type: "bool", name: "RefundOk"}
-        ]
-        topic = web3.eth.abi.encodeEventSignature("RefundStatusChanged(bool)"); 
-        await App.displayLog(address, topic, typesArray, (decodedLog) => {
+        // topic = web3.eth.abi.encodeEventSignature("Refunded(address,uint256,uint256)");
+        // typesArray = [
+        //   {type: "address", name: "receiver", indexed: true},
+        //   {type: "uint256", name: "amount"},
+        //   {type: "uint256", name: "count"}
+        // ];
+        topicTypes = lookupEventSignatureInfoType("Refunded", App.contracts.Donation.events);
+        await App.displayLog(address, topicTypes.topic, topicTypes.typesArray, (decodedLog) => {
+          let msg = App.getRefundedMsg(decodedLog);
+          return msg;
+        });
+        // typesArray = [
+        //   {type: "bool", name: "refundOk"}
+        // ]
+        topicTypes = lookupEventSignatureInfoType("RefundStatusChanged", App.contracts.Donation.events);
+        // topic = web3.eth.abi.encodeEventSignature("RefundStatusChanged(bool)"); 
+        // if (topic != topicTypes.topic) {
+        //   console.error("RefundStatusChanged topic doesn't match!!!");
+        // }        
+        await App.displayLog(address, topicTypes.topic, topicTypes.typesArray, (decodedLog) => {
           let msg = App.getRefundOkMsg(decodedLog);           
           return msg;
         });
 
+        debugger;
         typesArray = [
           {type: 'address', name: 'receiver', indexed: true}, 
-          {type: 'uint256', name: 'amount'}
+          {type: 'uint256', name: 'amount'},
+          {type: "uint256", name: "count"}
         ];
-        topic = web3.eth.abi.encodeEventSignature("Withdrawn(address,uint256)");        
-        await App.displayLog(address, topic, typesArray, (decodedLog) => {
+        // topic = web3.eth.abi.encodeEventSignature("Withdrawn(address,uint256,uint256)");
+        topicTypes = lookupEventSignatureInfoType("Withdrawn", App.contracts.Donation.events);       
+        if (topic != topicTypes.topic) {
+          console.error("Withdrawn topic doesn't match!!!");
+        }        
+        debugger;
+        await App.displayLog(address, topicTypes.topic, typesArray, (decodedLog) => {
+          debugger;
           let msg = App.getWithdrawnMsg(decodedLog);
           return msg;
         });
 
-        typesArray = [
-          {type: 'uint256', name: 'amount'}
-        ];
+        // typesArray = [
+        //   {type: 'uint256', name: 'amount'}
+        // ];
         topic = web3.eth.abi.encodeEventSignature("AdminFeeChanged(uint256)");
-        await App.displayLog(address, topic, typesArray, (decodedLog) => {
+        debugger;
+        topicTypes = lookupEventSignatureInfoType("AdminFeeChanged", App.contracts.Donation.events);
+        if (topic != topicTypes.topic) {
+          console.error("AdminFeeChanged topic doesn't match!!!");
+        }        
+        await App.displayLog(address, topicTypes.topic, topicTypes.typesArray, (decodedLog) => {
           App.updateAdminFee(decodedLog.amount);
           let msg = App.getAdminFeeChangedMsg(decodedLog);
           return msg;
         });
+*/
 
         // now start listening to events: Received,  Withdraw, Refund, etc..
+        App.listenAdminFeeChanged(instance);
         App.listenReceived(instance);
+        App.listenRefunded(instance);
         App.listenRefundOk(instance);
         App.listenWithdrawn(instance);
-        App.listenAdminFeeChanged(instance);
   },
   handleSetAdminFee: async () => {
-    try {
-      let instance = await App.setupDonationContract();
-      let amount = $(ED_ADMINFEE).val().trim();
-      let adminFee = web3.utils.toHex( web3.utils.toWei(`${amount}`, "ether") );
-      await instance.setAdminFee(adminFee, {from: App.currentAccount});
-    } catch(error) {
-      let timestamp = App.getTimestamp();
-      App.updateLog(timestamp, error);
-    }
+    await App.showCall("Set Admin Fee", async () => {
+      try { 
+        let instance = await App.setupDonationContract();
+        let amount = $(ED_ADMINFEE).val().trim();
+        let adminFee = web3.utils.toHex( web3.utils.toWei(`${amount}`, "ether") );
+        await instance.setAdminFee(adminFee, {from: App.currentAccount});
+      } catch (error) {
+        App.updateStatus(error.message);
+        throw error.message;
+      }
+    });      
+    // set admin fee code
+    // try {
+    //   let instance = await App.setupDonationContract();
+    //   let amount = $(ED_ADMINFEE).val().trim();
+    //   let adminFee = web3.utils.toHex( web3.utils.toWei(`${amount}`, "ether") );
+    //   await instance.setAdminFee(adminFee, {from: App.currentAccount});
+    // } catch(error) {
+    //   debugger;
+    //   let timestamp = App.getTimestamp();
+    //   let msg = error;
+    //   if (typeof error.message != "undefined") {
+    //     msg = error.message;
+    //   }
+    //   App.updateLog(timestamp, msg);
+    // }
   },
   handleToggleRefund: async () => {
     try {
@@ -456,15 +717,26 @@ let App = {
   handleWithdraw: async (event) => {
     try {
       let instance = await App.setupDonationContract();
-      let amount = await App.getBalance(); 
+      let receiver = App.currentAccount;
+      let amount = await App.getBalance();
+      let update = false;
+      const event = instance.Withdrawn();
+      event.once(EVENT_NAME, (data) => {
+        // Withdraw event
+        debugger;
+        update = true;
+        amount = data.args.amount;
+        receiver = data.args.receiver;
+      }); 
       await App.showCall("emptyBalance", async () => {
           await instance.emptyBalance({from: App.currentAccount});
-          await App.showBalance(); // in case listening is not active.
+          await App.updateBalance(); // in case listening is not active.
         }
       );
-      let receiver = App.currentAccount;
-      let status = `Withdrawn ${amount} ETH to ${receiver}.`;  
-      App.updateStatus(status);
+      if (update) { 
+        let status = `Withdrawn ${amount} ETH to ${receiver}.`;  
+        App.updateStatus(status);
+      }
     } catch (error) {
       let timestamp = App.getTimestamp();
       // use this to break the string into manageable length
@@ -492,6 +764,8 @@ let App = {
       ethereum.removeListener(ACCOUNTSCHANGED, App.eventAccountsChanged);
       ethereum.removeListener(CHAINCHANGED, App.eventChainChanged);
 
+      // event listeners, to listen for incoming events
+
       ethereum.on(CONNECT, App.eventConnected);
       connectListeners = ethereum.listeners(CONNECT);
 
@@ -506,7 +780,7 @@ let App = {
     
   },
   isDonorModule: () => {
-    let result = App.elementExists(BTN_SENDETH);
+    let result = App.elementExists(BTN_DONATE_ETH);
     return result;
   },
   isAdminModule: () => {
@@ -514,6 +788,7 @@ let App = {
     return result;
   },
   logAdminFeeChanged: async (data) => {
+    // debugger;
     try {
       let x = async function() {
         let tx = data.transactionHash;
@@ -521,7 +796,7 @@ let App = {
         let block = await web3.eth.getBlock(blockNo);
         let timestamp = block.timestamp;
         let msg = App.getAdminFeeChangedMsg(data.args);
-        App.updateAdminFee(data.args.amount);           
+        App.updateAdminFee(data.args.amount); // don't update current          
         App.updateLog(timestamp, msg);
       }
       await x();
@@ -553,13 +828,32 @@ let App = {
         }
         await x();
       }
-      await App.showBalance();
+      // update contract balance
+      await App.updateBalance();
     } catch (error) {
       let timestamp = App.getTimestamp();
       App.updateLog(timestamp, "error showing log: " + error.message);
     }
   },
+  logRefunded: async (data) => {
+    debugger;
+    try {
+      let x = async function() {
+        let tx = data.transactionHash;
+        let blockNo = data.blockNumber;
+        let block = await web3.eth.getBlock(blockNo);
+        let timestamp = block.timestamp;
+        let msg = App.getRefundedMsg(data.args);
+        App.updateLog(timestamp, msg);
+      }
+      await x();
+    } catch (error) {
+      let timestamp = App.getTimestamp();
+      App.updateLog(timestamp, error);
+    }
+  },
   logRefundOk: async (data) => {
+    debugger;
     try {
       let x = async function() {
         let tx = data.transactionHash;
@@ -578,6 +872,7 @@ let App = {
     }
   },
   logWithdrawn: async (data) => {
+    debugger;
     try {
       let amount = web3.utils.fromWei(`${data.args.amount}`, "ether");
       let x = async function() {
@@ -592,7 +887,7 @@ let App = {
         App.updateLog(timestamp, msg);
       }
       await x();
-      await App.showBalance();
+      await App.updateBalance();
     } catch (error) {
       let timestamp = App.getTimestamp();
       App.updateLog(timestamp, "error showing log: " + error.message);
@@ -605,32 +900,40 @@ let App = {
       return;
     }
     let timestamp = App.getTimestamp();
-    App.updateLog(timestamp, `Adding ${name} listener...`);
-    let listeners = event.listeners(DATA);
+    if (DIAGNOSTICS) {App.updateLog(timestamp, `Adding ${name} listener...`);} else {
+      console.log(`Adding ${name} listener...`);
+    }
+    let listeners = event.listeners(EVENT_NAME);
     for(let listener in listeners) {
       if (listener == handler) {
-        event.removeListener(DATA, handler);
+        event.removeListener(EVENT_NAME, handler);
       }
     }
-    event.on(DATA, handler);
+    event.on(EVENT_NAME, handler);
     timestamp = App.getTimestamp();
-    App.updateLog(timestamp, `${name} listener added.`);
-    let listeners2 = event.listeners(DATA);
+    if (DIAGNOSTICS) {App.updateLog(timestamp, `${name} listener added.`);} else {
+      console.log(`${name} added.`);
+    }
+    let listeners2 = event.listeners(EVENT_NAME);
     if (listeners != listeners2) {}
   },
   stopListening: (instance) => {
     let event;
+
+    event = instance.Refunded();
+    event.removeListener(EVENT_NAME, App.logRefunded);
+
     event = instance.Received();
-    event.removeListener(DATA, App.logReceived);
+    event.removeListener(EVENT_NAME, App.logReceived);
     
     event = instance.Withdrawn();
-    event.removeListener(DATA, App.logWithdrawn);
+    event.removeListener(EVENT_NAME, App.logWithdrawn);
 
     event = instance.RefundStatusChanged();
-    event.removeListener(DATA, App.logRefundOk);
+    event.removeListener(EVENT_NAME, App.logRefundOk);
     
     event = instance.AdminFeeChanged();
-    event.removeListener(DATA, App.logAdminFeeChanged);
+    event.removeListener(EVENT_NAME, App.logAdminFeeChanged);
   },
   listenAdminFeeChanged: (instance) => {
     if (App.instances && typeof App.instances.Donation == "undefined") {
@@ -647,6 +950,14 @@ let App = {
     }
     const event = instance.Received();
     App.listenEvent(event, "Received", App.logReceived);
+  },
+  listenRefunded: (instance) => {
+    if (App.instances && typeof App.instances.Donation == "undefined") {
+      // Don't listen if no instance available
+      return;
+    }
+    const event = instance.Refunded();
+    App.listenEvent(event, "Refunded", App.logRefunded);
   },
   listenRefundOk: (instance) => {
     if (App.instances && typeof App.instances.Donation == "undefined") {
@@ -670,7 +981,7 @@ let App = {
     let currentTime = new Date();
     let line = `${currentTime.timeNow()} - ${msg}`;
     console.log(line);
-    let status = $("#status");
+    let status = $(STATUSBAR);
     status.text(line);
   },
 
@@ -690,7 +1001,6 @@ let App = {
     return result;
   },
   updateAdminFee: (adminFee) => { // takes adminFee in wei
-    debugger;
     let amount = App.weiToEther(adminFee);
     $(LBL_ADMINFee).text(`${amount} ETH`);
   },
@@ -699,26 +1009,19 @@ let App = {
     $(LBL_REFUNDOK).text(value);
   },
   updateLog: (timestamp, msg) => {
-    // let currentTime = new Date(timestamp * 1000);
-    // let currentDate = `${currentTime.getFullYear()}-${(currentTime.getMonth()+1).toString().padStart(2, '0')}-${currentTime.getDate().toString().padStart(2, '0')}`
-    // let line = `${currentDate} ${currentTime.timeNow()} - ${msg}`;
-    // console.log(`${line}`);
     let line = App.getUpdateLog(timestamp, msg);
-    // let donationsLog = $(PNL_DONATIONS);
-    // donationsLog.append(line);
     App.appendLog(line);
 
     // auto-scrolling
     let donationsLog = $(PNL_DONATIONS);
     donationsLog.scrollTop(donationsLog.prop("scrollHeight")); // works if statusbar doesn't exist
-    // $(window).scrollTop( $(window).scrollTop()+100 ); // works with or without status bar at the bottom   
+
   },
   handleRefundETH: async (event) => {
     try {
       let instance = await App.setupDonationContract();
 
       await App.showCall("refund", async () => {
-        debugger;
         let amountToRefund = $(ED_ETHSENDVALUE).val().trim(); // reuse the send edit box.
         let amount = web3.utils.toHex( web3.utils.toWei(`${amountToRefund}`, "ether") );
         await instance.refund(amount, {from: App.currentAccount});
@@ -736,11 +1039,11 @@ let App = {
 
       await App.showCall("donateETH", async () => {
         let amountToSend = $(ED_ETHSENDVALUE).val().trim();
-        let ETHdata = {
+        let ethData = {
           from: App.currentAccount, 
           value: web3.utils.toHex( web3.utils.toWei(`${amountToSend}`, "ether") )
         };
-        await instance.donateETH(ETHdata);
+        await instance.donateETH(ethData);
       });
      
     } catch (error) {
@@ -748,11 +1051,10 @@ let App = {
     }
     return true;   
   },
-
+  
   setupDonationContract: async () => {
     if (App.contracts.Donation === undefined || App.instances === undefined || App.instances.Donation === undefined) {
       try {
-
         let data = App.DonationArtifact || await $.getJSON("Donation.json");
         if (App.DonationArtifact === undefined) {
           App.DonationArtifact = data; // setup the DonationArtifact
@@ -768,11 +1070,10 @@ let App = {
           instance = App.instances.Donation;
         }
         $(LBL_CONTRACT_ADDRESS).text(instance.address);
-        debugger;
+
         if (App.isDonorModule()) {
           App.listenReceived(instance);
         }
-        
         
         // Update owner address
         let owner = await instance.owner.call();
@@ -786,7 +1087,7 @@ let App = {
         App.updateRefundOk(refundOk);
         
         // update balance
-        await App.showBalance();
+        await App.updateBalance();
       } catch (error) {
         if (error == "Error: Donation has not been deployed to detected network (network/artifact mismatch)") {
           const NOT_DEPLOYED = "Not deployed.";
@@ -802,7 +1103,43 @@ let App = {
     }
     return App.instances.Donation;
   },
-
+  setupWSSProvider: (_chainId) => {
+    debugger;
+    let localProvider, url;
+    try {
+      let chainId = parseInt(_chainId);
+      switch(chainId) {
+        case 1: 
+          chainName = "mainnet";
+          url = `wss://mainnet.infura.io/ws/v3/${infuraInfo.InfuraProjectID}`;
+          break; 
+        case 3: 
+          chainName = "ropsten";
+          url = `wss://ropsten.infura.io/ws/v3/${infuraInfo.InfuraProjectID}`
+          break;
+        case 4: 
+          chainName = "rinkeby";
+          url = `wss://rinkeby.infura.io/ws/v3/${infuraInfo.InfuraProjectID}`;
+          break;
+        case 5: 
+          chainName = "goerli";
+          url = `wss://goerli.infura.io/ws/v3/${infuraInfo.InfuraProjectID}`;
+          break;
+        case 42: 
+          chainName = "kovan";
+          url = `wss://kovan.infura.io/ws/v3/${infuraInfo.InfuraProjectID}`;
+          break;
+        default:
+          localProvider = "";
+      }
+    } catch (error) {
+    }
+    if (localProvider != "") {
+      localProvider = new Web3.providers.WebsocketProvider(url);
+      App.wssProvider = localProvider;
+      App.web3wss = new Web3(localProvider);
+    }
+  },
   updateConnectionStatus: () => {
     try {
       let connected = ethereum.isConnected();
@@ -828,8 +1165,12 @@ let App = {
         await App.requestAccounts();
         App.updateConnectionStatus();
         App.hookEvents();
-        if (App.elementExists(BTN_LISTDONATIONS)) {
-          App.enableListDonationsButton();
+
+        // remind user to listen to events
+        startBlinker();
+
+        if (App.elementExists(BTN_LISTEN_EVENTS)) {
+          App.enableListEventsButton();
           await App.checkAdminButtons();
         } else {
           if (ethereum.isConnected()) {
@@ -837,6 +1178,7 @@ let App = {
             // enable the donate button and refund button
             App.enableDonateButton();
             App.enableRefundButton();
+
           }
         }
       }
@@ -864,12 +1206,14 @@ let App = {
         });
       } catch (error) {
         App.updateStatus(error.message);
+        throw error.message;
       }  
     });    
     return true;
   },
 
   initWeb3Provider: () => {
+    
     if (App.web3Provider == null) {   
       if (window.ethereum) {
         App.web3Provider = window.ethereum;
@@ -879,6 +1223,7 @@ let App = {
         App.web3Provider = new Web3.providers.HttpProvider("http://localhost:7545");
       }
       web3 = new Web3(App.web3Provider);
+      // web3 = new Web3(Web3.providers.WebsocketProvider
     }
   },
 
@@ -895,10 +1240,19 @@ let App = {
 
   showCall: async (name, fn) => {
     App.updateStatus(`Calling ${name}...`);
+    let msg = "";
     try {
-      await fn();
+      try {
+        await fn();
+      } catch (error) {
+        if (typeof error === "object") {
+          msg = error.message;
+        } else {
+          msg = error;
+        }
+      }
     } finally {
-      App.updateStatus(`Call to ${name} completed.`);
+      App.updateStatus(`Call to ${name} completed. ${msg}`);
     }
   }
 
@@ -920,4 +1274,5 @@ let App = {
 window.addEventListener('pageshow', async () =>{
     console.log("Initializing app...");
     await App.init();
-  }, false);
+  }, false
+);

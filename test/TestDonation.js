@@ -1,8 +1,11 @@
 // See: https://ethereum.stackexchange.com/a/58483/17144
-const Web3 = require('web3');
+// see also https://github.com/mochajs/mocha/blob/v5.2.0/lib/mocha.js#L83
+"strict mode";
+const Web3 = require('web3'); // automatically injected?
 const web3 = new Web3(new Web3.providers.HttpProvider('http://localhost:7545'));
 
 const Donation = artifacts.require("Donation");
+const EVENT = "data";
 
 contract("Donation", async (accounts) => {
 
@@ -26,6 +29,8 @@ contract("Donation", async (accounts) => {
     };
 
     let setAdminFee = async (instance, account, amount) => {
+      // this version converts the amount into wei
+
       let weiAmount = web3.utils.toHex( web3.utils.toWei(`${amount}`, "ether") );
       let transaction = await instance.setAdminFee(weiAmount, {from: account});
       return transaction;
@@ -59,7 +64,7 @@ contract("Donation", async (accounts) => {
 
   it("Should return the creator as owner", async () => {
     let instance = await Donation.new({from: accounts[0]});
-    let owner = await instance.owner();
+    let owner = await instance.owner.call();
     assert.equal(owner, accounts[0], "owner is not contract creator!");
   });
   
@@ -73,7 +78,7 @@ contract("Donation", async (accounts) => {
     let instance = await Donation.deployed();
     const event = instance.Received();
     let pass = false;
-    event.once("data", (data) => {
+    event.once(EVENT, (data) => {
       pass = true;
     });
     let amountToSend = 0.05;
@@ -107,7 +112,7 @@ contract("Donation", async (accounts) => {
     const event = instance.Received();
     let pass = false;
     let amount = 0.0;
-    event.on("data", (data) => {
+    event.on(EVENT, (data) => {
       let sender = data.args.sender;
       amount = web3.utils.fromWei(`${data.args.amount}`, "ether");
       let count  = data.args.count;
@@ -123,6 +128,31 @@ contract("Donation", async (accounts) => {
     console.log(`Received donation of ${amount} ETH from sender`);
     assert.equal(amount, amountToSend, `Amount received is: ${amount}`);
     // console.log(`Amount received is ${amount} ETH.`);   
+  });
+
+  it("Should fire an event on allowing refund", async() => {
+    let owner = accounts[0];
+    let instance = await Donation.new({from: owner});
+    const event = instance.RefundStatusChanged();
+    let pass = false;
+    event.on(EVENT, (data) => {
+      pass = true;
+    });
+    let tx = await instance.setRefundOk(true, {from: owner});
+    await waitTillMined(tx.receipt.transactionHash);
+    assert.equal(pass, true, "Allowing refund should have fired an event!");
+  });
+
+  it("Should fire an event on changing admin fee", async() => {
+    let instance = await Donation.deployed();
+    const event = instance.AdminFeeChanged();
+    let pass = false;
+    event.on(EVENT, (data) => {
+      pass = true;
+    });
+    let owner = await instance.owner.call();
+    await setAdminFee(instance, owner, 0.01);
+    assert.equal(pass, true, "Changing admin fee should have fired an event!");
   });
 
   it("Should fire an event on emptyBalance", async() => {
@@ -215,7 +245,7 @@ contract("Donation", async (accounts) => {
       await instance.setRefundOk(true, {from: accounts[1]});
       errortracking = 1;
     } catch (error) {
-      console.log("This exception is expected to be triggered: " + error);
+      console.log("This exception is expected: " + error);
       errortracking = 2;
     }
     assert.equal(errortracking, 2, `Non-creator: ${accounts[1]} was able to change refundOk flag!`);
@@ -235,15 +265,17 @@ contract("Donation", async (accounts) => {
   });
 
   it("Should allow a refund when amount (after deducting admin fee) is enough.", async() => {
-    let instance = await Donation.new({from: accounts[0]});
+    let owner = accounts[0];
+    let user = accounts[1];
+    let instance = await Donation.new({from: owner});
     let amount = 0.05;
-    await donateETH(instance, accounts[1], amount);
-    await setAdminFee(instance, accounts[0], 0.01);
+    await donateETH(instance, user, amount);
+    await setAdminFee(instance, owner, 0.01);
     let adminFee = await getAdminFee(instance);
     let refundTracking = 0;
     try {
-      await instance.setRefundOk(true, {from: accounts[0]});
-      await refundETH(instance, accounts[1], amount - adminFee);
+      await instance.setRefundOk(true, {from: owner});
+      await refundETH(instance, user, amount - adminFee);
       refundTracking = 1; 
     } catch (error) {
       refundTracking = 2;
@@ -252,49 +284,51 @@ contract("Donation", async (accounts) => {
     assert.equal(refundTracking, 1, "Refund should be allowed!");
   });
 
-  it("Shouldn't allow a refund when amount (after deducting admin fee) isn't enough.", async() => {
-    let instance = await Donation.new({from: accounts[0]});
-    let amount1 = 0.05;
-    await donateETH(instance, accounts[1], amount1);
-    setAdminFee(instance, accounts[0], amount1+0.01); // make the admin fee higher than the amount itself
+  it("Shouldn't allow a refund when amount + adminFee > donor's balance.", async() => {
+    let owner = accounts[0], user = accounts[1];
+    let instance = await Donation.new({from: owner});
+    let amount = 0.05;
+    await donateETH(instance, user, amount);
+    await setAdminFee(instance, owner, 0.01); // set the admin fee 
     let adminFee = await getAdminFee(instance);
     let refundTracking = 0;
     try {
-      await instance.setRefundOk(true, {from: accounts[0]});
-      await refundETH(instance, accounts[1], amount);
+      await instance.setRefundOk(true, {from: owner});
+      await refundETH(instance, user, amount);
       refundTracking = 1; 
     } catch (error) {
+      console.log("This error is expected: " + error);
       refundTracking = 2;
     }
     assert.equal(refundTracking, 2, "Refund shouldn't be allowed!");
   });
 
   it("Donor balance should be 0 after a full refund", async() => {
-    let ownerAccount = accounts[2];
-    let userAccount = accounts[1];
+    let owner = accounts[2];
+    let user = accounts[1];
 
-    let instance = await Donation.new({from: ownerAccount});
+    let instance = await Donation.new({from: owner});
     let amount1 = 0.03; let amount2 = 0.01; var currentBalance;
     try {  
 
-      let tx1 = await donateETH(instance, userAccount, amount1);
-      let tx2 = await donateETH(instance, userAccount, amount2);
+      let tx1 = await donateETH(instance, user, amount1);
+      let tx2 = await donateETH(instance, user, amount2);
       
       await waitTillMined(tx1.receipt.transactionHash);
       await waitTillMined(tx2.receipt.transactionHash);
 
-      let tx3 = await instance.setRefundOk(true, {from: ownerAccount});
+      let tx3 = await instance.setRefundOk(true, {from: owner});
       await waitTillMined(tx3.receipt.transactionHash);
 
-      let tx4 = await setAdminFee(instance, ownerAccount, 0);
+      let tx4 = await setAdminFee(instance, owner, 0);
       await waitTillMined(tx4.receipt.transactionHash);
 
-      let amountToRefund = await getBalance(instance, userAccount);
+      let amountToRefund = await getBalance(instance, user);
       console.log("Amount to refund: " + amountToRefund);
-      let tx5 = await refundETH(instance, userAccount, amountToRefund);
+      let tx5 = await refundETH(instance, user, amountToRefund);
       await waitTillMined(tx5.receipt.transactionHash);
 
-      currentBalance = await getBalance(instance, userAccount);
+      currentBalance = await getBalance(instance, user);
     } catch (error) {
       console.log(error);
     }
