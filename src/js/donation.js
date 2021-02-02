@@ -210,7 +210,7 @@ let App = {
   },
   getRefundedMsg: (event) => {
     // debugger;
-    let receiver = event.receiver; // note, sender, not receiver!!!
+    let receiver = event.receiver; // wrong signature names can cause an exception!!!
     let amount = web3.utils.fromWei(`${event.amount}`, "ether");
     let msg = `Refunded ${amount} ETH to ${receiver}.`;
     return msg;
@@ -441,7 +441,7 @@ let App = {
         // show contract address
         $(LBL_CONTRACT_ADDRESS).text(instance.address);
         // show owner address
-        let owner = await instance.owner.call(); // await instance.owner.call(); // working
+        let owner = await instance.owner.call();
         $(LBL_OWNER_ADDRESS).text(owner);
         await App.updateBalance();
       }
