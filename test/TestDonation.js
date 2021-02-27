@@ -159,7 +159,7 @@ contract("Donation", async (accounts) => {
     let instance = await Donation.deployed();
     const event = instance.Withdrawn();
     let withdrawn = false;
-    var amount = 0.0;
+    let amount = 0.0;
     let receiver;
     event.on("data", (data) => {
       receiver = data.args.receiver;
@@ -351,5 +351,43 @@ contract("Donation", async (accounts) => {
 
     assert.equal(failed, true, "Failure in refund!");
   });
+
+  it("Should allow current owner to change to a new owner", async () => {
+    let owner = accounts[0];
+    let newOwner = accounts[1];
+    let instance = await Donation.new({from: owner});
+    let ownerChanged = false; let eventOwnerChanged = false;
+    const event = instance.OwnerChanged();
+    event.once(EVENT, (data) => {
+      eventOwnerChanged = true;
+    });
+    try {
+      let tx = await instance.changeOwner(newOwner, {from: owner});
+      await waitTillMined(tx.receipt.transactionHash);
+      ownerChanged = true;
+    } catch (error) {
+      ownerChanged = false;
+    }
+    assert.equal(ownerChanged, true, "Owner couldn't be changed!");
+    assert.equal(eventOwnerChanged, true, "Owner changed event wasn't fired!");
+  });
+
+  it("Shouldn't allow user to change to a new owner", async () => {
+    let owner = accounts[0];
+    let newOwner = accounts[1];
+    let instance = await Donation.new({from: owner});
+    let ownerChanged = false; let eventOwnerChanged = false;
+    const event = instance.OwnerChanged();
+    event.once(EVENT, (data) => {
+      eventOwnerChanged = true;
+    });
+    try {
+      await instance.changeOwner(newOwner, {from: newOwner});
+    } catch (error) {
+      ownerChanged = false;
+    }
+    assert.equal(ownerChanged, false, "Owner couldn be changed by non-owner!");
+  });
+
 
 });

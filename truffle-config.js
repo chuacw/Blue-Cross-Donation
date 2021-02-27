@@ -2,7 +2,6 @@ const HDWalletProvider = require('@truffle/hdwallet-provider');
 const configData = require("./.secret.json");
 const infuraKey = configData.InfuraProjectID; // this is Infura Project ID
 const mnemonic = configData.mnemonic;
-const Web3 = require("./node_modules/web3");
 
 module.exports = {
   // see https://ethereum.stackexchange.com/questions/19641/how-to-set-the-timeout-for-truffle-tests-before-block
@@ -47,9 +46,6 @@ module.exports = {
       port: 7545,
       network_id: "*", // Match any network id
       websockets: true
-    },
-    develop: {
-      port: 8545
     }
   },
   compilers: {

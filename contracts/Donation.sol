@@ -21,17 +21,23 @@ contract Donation {
     event Refunded(address indexed receiver, uint256 amount, uint256 count);
     event Withdrawn(address indexed receiver, uint256 amount, uint256 count);
     
+    event OwnerChanged(address indexed newOwner);
     event AdminFeeChanged(uint256 amount);
     event RefundStatusChanged(bool refundOk);
 
     constructor() {
       owner = msg.sender;
-      refundOk = false; // Do not refund initially
+      refundOk = false; // Do not allow refund initially
     }
 
     modifier onlyOwner() {
       require (msg.sender == owner, "caller is not owner of contract!");
       _;
+    }
+
+    function changeOwner(address newOwner) external onlyOwner() {
+      owner = newOwner;
+      emit OwnerChanged(newOwner);
     }
 
     modifier refundAllowed() {

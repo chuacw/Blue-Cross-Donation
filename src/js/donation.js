@@ -49,19 +49,28 @@ const ACCOUNTSCHANGED = "accountsChanged";
 const CONNECT = "connect";
 const DISCONNECT = "disconnect";
 
+const ED_NEW_OWNER_ADDRESS="#edNewAddress";
+const BTN_CHANGE_OWNER="#btnChangeOwner";
+
 const DIAGNOSTICS = false;
 
-let myBlinkingButton, infuraInfo;
+let blinkerID = 0, infuraInfo;
 
 function blinker() {
   $(BTN_LISTEN_EVENTS).fadeOut(500);
   $(BTN_LISTEN_EVENTS).fadeIn(500);
 }
 function startBlinker() {
-  myBlinkingButton = setInterval(blinker, 1000);
-  setTimeout(() => clearInterval(myBlinkingButton), 5000);
+  if (blinkerID == 0) {
+    blinkerID = setInterval(blinker, 1000);
+  }
 }
-
+function stopBlinker() {
+  if (blinkerID != 0) {
+    clearInterval(blinkerID);
+  }
+  blinkerID = 0;
+}
 
 const compareAddress = (addr1, addr2) => {
   let result = false;
@@ -186,6 +195,15 @@ let App = {
       ]
     });
   },
+
+  getErrorMsg: (error) => {
+    if (typeof error == "object") {
+      msg = error.message;
+    } else {
+      msg = error;
+    }
+    return msg;    
+  },
   
   weiToEther: (value) => {
     let amount = web3.utils.fromWei(`${value}`, "ether");
@@ -201,6 +219,10 @@ let App = {
     let amount = web3.utils.fromWei(`${event.amount}`, "ether");
     let msg = `Admin fee is now: ${amount} ETH.`;
     return msg;  
+  },
+  getOwnerChangedMsg: (event) => {
+    let msg = `New owner is: ${event.newOwner}`;
+    return msg;
   },
   getReceivedETHMsg: (event) => {
     let sender = event.sender;
@@ -319,17 +341,34 @@ let App = {
     App.enableWithdrawButton();
     App.enableSetAdminFeeButton();
     App.enableToggleRefundButton();
+    App.enableChangeOwnerButton();
+    App.enableChangeAddressInput();
   },
   disableAdminButtons: () => {
     App.disableWithdrawButton();
     App.disableSetAdminFeeButton();
     App.disableToggleRefundButton();
+    App.disableChangeOwnerButton();
+    App.disableChangeAddressInput();
   },
   checkWithdrawButton: async () => {
     let instance = await App.setupDonationContract();
     let owner = await instance.owner();
     compareAddress(App.currentAccount, owner) ? App.enableWithdrawButton(): App.disableWithdrawButton();
   },
+  enableChangeOwnerButton: () => {
+    App.enableButton(BTN_CHANGE_OWNER, App.handleChangeOwner);    
+  },
+  enableChangeAddressInput: () => {
+    $(ED_NEW_OWNER_ADDRESS).removeAttr(DISABLED);
+  },
+  disableChangeOwnerButton: () => {
+    App.disableButton(BTN_CHANGE_OWNER);
+  },
+  disableChangeAddressInput: () => {
+    $(ED_NEW_OWNER_ADDRESS).attr(DISABLED, true);
+  },
+
   disableWithdrawButton: () => {
     App.disableButton(BTN_WITHDRAW);
   },
@@ -359,7 +398,8 @@ let App = {
       refundOk = !refundOk;
       await instance.setRefundOk(refundOk);
     } catch (error) {
-      App.updateStatus(error);
+      let msg = App.getErrorMsg(error);
+      App.updateStatus(msg);
     }
   },
 
@@ -377,23 +417,28 @@ let App = {
     App.displayDisconnected();
   },
   eventChainChanged: async (chainId) => {
-    if (App.instances.Donation != null) {
-      let instance = App.instances.Donation;
-      App.stopListening(instance);
+    try {
+      if (App.instances.Donation != null) {
+        let instance = App.instances.Donation;
+        App.stopListening(instance);
+      }
+      delete App.instances.Donation; // reset instances
+      await App.setupDonationContract();
+      App.requestAccounts();
+      App.clearLog();
+      App.displayConnectedChainId(chainId);
+      App.updateNetworkName(chainId);
+      if (App.instances && typeof App.instances.Donation == "undefined") {
+        App.disableListDonationsButton();
+      } else {
+        App.enableListEventsButton();
+      }
+      stopBlinker();
+      startBlinker();
+    } catch (error) {
+      let msg = App.getErrorMsg(error);
+      App.updateStatus(msg);
     }
-    delete App.instances.Donation; // reset instances
-    await App.setupDonationContract();
-    App.requestAccounts();
-    App.clearLog();
-    App.displayConnectedChainId(chainId);
-    App.updateNetworkName(chainId);
-    if (App.instances && typeof App.instances.Donation == "undefined") {
-      App.disableListDonationsButton();
-    } else {
-      App.enableListEventsButton();
-    }
-    startBlinker();
-    
   },
   updateNetworkName: (chainId) => {
     if (App.elementExists(LBL_NETWORK_NAME)) {
@@ -405,7 +450,7 @@ let App = {
     let balance;
     try {
       let instance = App.instances.Donation;
-      let amount = await instance.getBalance.call();
+      let amount = await web3.eth.getBalance(instance.address);
       balance = web3.utils.fromWei(`${amount}`, "ether");
     } catch (error) {
       balance = "Unable to retrieve contract balance.";
@@ -425,7 +470,8 @@ let App = {
       let accounts = await ethereum.request({ method: 'eth_requestAccounts' });
       await App.handleAccountsChanged(accounts);
     } catch (error) {
-      App.updateStatus(error.message);
+      let msg = App.getErrorMsg(error);
+      App.updateStatus("Unable to request accounts: " + msg);
     }
   },
   handleAccountsChanged: async (accounts) => {
@@ -485,13 +531,8 @@ let App = {
         let msg = fn(decodedLog);
         App.updateLog(timestamp, msg);
       } catch (error) {
-        let msg;
+        let msg = App.getErrorMsg(error);
         let timestamp = App.getTimestamp();
-        if (typeof error === "object") {
-          msg = error.message;
-        } else {
-          msg = error;
-        }
         App.updateLog(timestamp, "Error during decoding: " + msg);
       }
     }
@@ -513,17 +554,38 @@ let App = {
         let msg = fn(decodedLog);
         App.updateLog(timestamp, msg);
       } catch (error) {
+        let msg = App.getErrorMsg(error);
         let timestamp = App.getTimestamp();
-        App.updateLog(timestamp, "Error during decoding: " + error);
+        App.updateLog(timestamp, "Error during decoding: " + msg);
       }
     }
     
   },
+  handleChangeOwner: async () => {
+
+
+    try {
+      await App.showCall("change owner", async () => {
+        let instance = await App.setupDonationContract();
+        let newOwnerAddress = $(ED_NEW_OWNER_ADDRESS).val(); // get the HTML input
+        let isAddress = web3.utils.isAddress(newOwnerAddress);
+        if (!isAddress) {
+          throw `${newOwnerAddress} is not a valid address!`;
+        }
+        await instance.changeOwner(newOwnerAddress, {from: App.currentAccount});
+      });
+    } catch (error) {
+      let timestamp = App.getTimestamp();
+      let msg = App.getErrorMsg(error);
+      App.updateLog(timestamp, "Error during changing owner: " + msg);
+    }
+  },
   handleListenEvents: async (event) => {
-
-
+    // Handles the Start listening to events button
+        stopBlinker();
         App.updateStatus("Listening for events...");
-
+        let timestamp = App.getTimestamp();
+        App.appendLog("-- start of historical events -- <br/>")
         let instance = await App.setupDonationContract();
         // list all previous donations
         let address = instance.address;
@@ -531,17 +593,26 @@ let App = {
       
         // https://ethereum.stackexchange.com/questions/87653/how-to-decode-log-event-of-my-transaction-log
         let typesArray, topicTypes;
-        let allTopicTypes = [];
-        let AdminFeeTypes = lookupEventSignatureInfoType("AdminFeeChanged", App.contracts.Donation.events);
-        let ReceivedTypes = lookupEventSignatureInfoType("Received",  App.contracts.Donation.events);
-        let RefundedTypes = lookupEventSignatureInfoType("Refunded", App.contracts.Donation.events);
-        let RefundStatusChangedTypes = lookupEventSignatureInfoType("RefundStatusChanged", App.contracts.Donation.events);
-        let WithdrawnTypes1 = lookupEventSignatureInfoType("Withdrawn", App.contracts.Donation.events);       
+        let allTopicTypes = []; let events = App.contracts.Donation.events;
+        let AdminFeeTypes = lookupEventSignatureInfoType("AdminFeeChanged", events);
+        let AdminOwnerChangedTypes = lookupEventSignatureInfoType("OwnerChanged", events);
+        let ReceivedTypes = lookupEventSignatureInfoType("Received",  events);
+        let RefundedTypes = lookupEventSignatureInfoType("Refunded", events);
+        let RefundStatusChangedTypes = lookupEventSignatureInfoType("RefundStatusChanged", events);
+        let WithdrawnTypes1 = lookupEventSignatureInfoType("Withdrawn", events);       
         let AdminFeeChangedHandler = {
           topic: AdminFeeTypes.topic, 
           typesArray: AdminFeeTypes.typesArray,
           handler: (decodedLog) => {
             let msg = App.getAdminFeeChangedMsg(decodedLog);
+            return msg;
+          }
+        };
+        let OwnerChangedHandler = {
+          topic: AdminOwnerChangedTypes.topic, 
+          typesArray: AdminOwnerChangedTypes.typesArray,
+          handler: (decodedLog) => {
+            let msg = App.getOwnerChangedMsg(decodedLog);
             return msg;
           }
         };
@@ -590,8 +661,9 @@ let App = {
             return msg;
           } 
         };
-        let topicHandlers = [AdminFeeChangedHandler, ReceivedHandler, RefundedHandler,
-          RefundStatusChangedHandler, WithdrawnHandler1, WithdrawnHandler2];
+        let topicHandlers = [AdminFeeChangedHandler, OwnerChangedHandler, ReceivedHandler, 
+          RefundedHandler, RefundStatusChangedHandler, WithdrawnHandler1, WithdrawnHandler2
+        ];
         await App.displayAllLogs(address, topicHandlers);
 /* 
         // topic = web3.eth.abi.encodeEventSignature("Received(address,uint256,uint256)");
@@ -609,13 +681,26 @@ let App = {
           return msg;
         });
 */
+        App.appendLog("-- end of historical events --<br/>")
 
         // now start listening to events: Received,  Withdraw, Refund, etc..
-        App.listenAdminFeeChanged(instance);
-        App.listenReceived(instance);
-        App.listenRefunded(instance);
-        App.listenRefundOk(instance);
-        App.listenWithdrawn(instance);
+        let listenToEvents = [
+          App.listenAdminFeeChanged,
+          App.listenOwnerChanged,
+          App.listenReceived,
+          App.listenRefunded,
+          App.listenRefundOk,
+          App.listenWithdrawn
+        ];
+        debugger;
+        for(let listenToEvent of listenToEvents) {
+          try {
+            listenToEvent(instance);
+          } catch (error) {
+            let msg = App.getErrorMsg(error);
+            App.updateStatus(msg);
+          }
+        }
   },
   handleSetAdminFee: async () => {
     await App.showCall("Set Admin Fee", async () => {
@@ -625,12 +710,7 @@ let App = {
         let adminFee = web3.utils.toHex( web3.utils.toWei(`${amount}`, "ether") );
         await instance.setAdminFee(adminFee, {from: App.currentAccount});
       } catch (error) {
-        let msg;
-        if (typeof error == "object") {
-          msg = error.message;
-        } else {
-          msg = error;
-        }
+        let msg = App.getErrorMsg(error);
         App.updateStatus(msg);
         throw msg;
       }
@@ -644,8 +724,10 @@ let App = {
       await instance.setRefundOk(value, {from: App.currentAccount});
     } catch (error) {
       // debugger;
+      let msg = App.getErrorMsg(error);
+      App.updateStatus(msg);
       let timestamp = App.getTimestamp();
-      App.updateLog(timestamp, error.message);
+      App.updateLog(timestamp, msg);
     }
   },
   handleWithdraw: async (event) => {
@@ -736,7 +818,32 @@ let App = {
       await x();
     } catch (error) {
       let timestamp = App.getTimestamp();
-      App.updateLog(timestamp, error);
+      let msg = App.getErrorMsg(error);
+      App.updateStatus(msg);
+      App.updateLog(timestamp, msg);
+    }    
+  },
+  logOwnerChanged:async (data) => {
+    debugger;
+    try {
+      let x = async function() {
+        let tx = data.transactionHash;
+        let blockNo = data.blockNumber;
+        let block = await web3.eth.getBlock(blockNo);
+        let timestamp = block.timestamp;
+        let msg = App.getOwnerChangedMsg(data.args);
+   
+        App.updateLog(timestamp, msg);
+
+        delete App.instances.Donation; // update owner by deleting the current instance
+        await App.setupDonationContract();
+      }
+      await x();
+    } catch (error) {
+      let msg = App.getErrorMsg(error);
+      App.updateStatus(msg);
+      let timestamp = App.getTimestamp();
+      App.updateLog(timestamp, msg);
     }    
   },
   logReceived: async (data) => {
@@ -762,8 +869,10 @@ let App = {
       // update contract balance
       await App.updateBalance();
     } catch (error) {
+      let msg = App.getErrorMsg(error);
+      App.updateStatus(msg);
       let timestamp = App.getTimestamp();
-      App.updateLog(timestamp, "error showing log: " + error.message);
+      App.updateLog(timestamp, "error showing log: " + msg);
     }
   },
   logRefunded: async (data) => {
@@ -779,8 +888,10 @@ let App = {
       }
       await x();
     } catch (error) {
+      let msg = App.getErrorMsg(error);
+      App.updateStatus(msg);
       let timestamp = App.getTimestamp();
-      App.updateLog(timestamp, error);
+      App.updateLog(timestamp, msg);
     }
   },
   logRefundOk: async (data) => {
@@ -798,8 +909,10 @@ let App = {
       }
       await x();
     } catch (error) {
+      let msg = App.getErrorMsg(error);
+      App.updateStatus(msg);
       let timestamp = App.getTimestamp();
-      App.updateLog(timestamp, error);
+      App.updateLog(timestamp, msg);
     }
   },
   logWithdrawn: async (data) => {
@@ -817,8 +930,10 @@ let App = {
       await x();
       await App.updateBalance();
     } catch (error) {
+      let msg = App.getErrorMsg(error);
+      App.updateStatus(msg);      
       let timestamp = App.getTimestamp();
-      App.updateLog(timestamp, "error showing log: " + error.message);
+      App.updateLog(timestamp, "error showing log: " + msg);
     }
   },
 
@@ -871,6 +986,14 @@ let App = {
     const event = instance.AdminFeeChanged();
     App.listenEvent(event, "AdminFeeChanged", App.logAdminFeeChanged);
   },
+  listenOwnerChanged: (instance) => {
+    if (App.instances && typeof App.instances.Donation == "undefined") {
+      // Don't listen if no instance available
+      return;
+    }
+    const event = instance.OwnerChanged();
+    App.listenEvent(event, "OwnerChanged", App.logOwnerChanged);
+  },
   listenReceived: (instance) => {
     if (App.instances && typeof App.instances.Donation == "undefined") {
       // Don't listen if no instance available
@@ -913,9 +1036,11 @@ let App = {
     status.text(line);
   },
 
+  // log related functions
   appendLog: (msg) => {
     let donationsLog = $(PNL_DONATIONS);
     donationsLog.append(msg);
+    donationsLog.scrollTop(donationsLog.prop("scrollHeight")); // works if statusbar doesn't exist
   },
   clearLog: () => {
     let donationsLog = $(PNL_DONATIONS);
@@ -928,6 +1053,15 @@ let App = {
     let result = `${line}<br>`;
     return result;
   },
+  updateLog: (timestamp, msg) => {
+    let line = App.getUpdateLog(timestamp, msg);
+    App.appendLog(line);
+
+    // auto-scrolling
+    let donationsLog = $(PNL_DONATIONS);
+    donationsLog.scrollTop(donationsLog.prop("scrollHeight")); // works if statusbar doesn't exist
+  },
+
   updateAdminFee: (adminFee) => { // takes adminFee in wei
     let amount = App.weiToEther(adminFee);
     $(LBL_ADMINFee).text(`${amount} ETH`);
@@ -936,14 +1070,8 @@ let App = {
     let value = refundOk?"yes": "no";
     $(LBL_REFUNDOK).text(value);
   },
-  updateLog: (timestamp, msg) => {
-    let line = App.getUpdateLog(timestamp, msg);
-    App.appendLog(line);
-
-    // auto-scrolling
-    let donationsLog = $(PNL_DONATIONS);
-    donationsLog.scrollTop(donationsLog.prop("scrollHeight")); // works if statusbar doesn't exist
-
+  updateOwner: (address) => {
+    $(LBL_OWNER_ADDRESS).text(address);
   },
   handleRefundETH: async (event) => {
     try {
@@ -956,7 +1084,8 @@ let App = {
       });
      
     } catch (error) {
-      App.updateStatus("refund error: " + error.message);
+      let msg = App.getErrorMsg(error);
+      App.updateStatus("refund error: " + msg);
     }
     return true;   
   },
@@ -975,7 +1104,8 @@ let App = {
       });
      
     } catch (error) {
-      App.updateStatus("donateETH error: " + error.message);
+      let msg = App.getErrorMsg(error);
+      App.updateStatus("donateETH error: " + msg);
     }
     return true;   
   },
@@ -1016,6 +1146,7 @@ let App = {
         
         // update balance
         await App.updateBalance();
+        App.checkAdminButtons();
       } catch (error) {
         if (error == "Error: Donation has not been deployed to detected network (network/artifact mismatch)") {
           const NOT_DEPLOYED = "Not deployed.";
@@ -1025,7 +1156,9 @@ let App = {
           App.disableListDonationsButton();
           App.disableAdminButtons();
         }
-        App.updateStatus(error);
+        stopBlinker();
+        let msg = App.getErrorMsg(error);
+        App.updateStatus(msg);
         throw error;
       }
     }
@@ -1037,8 +1170,14 @@ let App = {
       (connected ? App.displayConnectedChainId(ethereum.chainId): App.displayDisconnected());
     } catch (error) {
       // assumes no access to ethereum variable.
-      if (error.name == "ReferenceError")
+      if (typeof error.name != "undefined" && error.name == "ReferenceError") {
         App.updateStatus("No access to ethereum.");
+      } else {
+        let msg = App.getErrorMsg(error);
+        App.updateStatus(msg);
+        let timestamp = App.getTimestamp();
+        App.updateLog(timestamp, msg)
+      }
     }
   },
 
@@ -1075,7 +1214,10 @@ let App = {
       }
     } catch (error) {
       // likely a logic error, or forgot to handle something
-      App.updateStatus(error);
+      let msg = App.getErrorMsg(error);
+      App.updateStatus(msg);
+      let timestamp = App.getTimestamp();
+      App.updateLog(timestamp, msg);
     }
     return true;
   },
@@ -1096,8 +1238,11 @@ let App = {
           ]
         });
       } catch (error) {
-        App.updateStatus(error.message);
-        throw error.message;
+        let msg = App.getErrorMsg(error);
+        App.updateStatus(msg);
+        let timestamp = App.getTimestamp();
+        App.updateLog(timestamp, msg);
+        throw msg;
       }  
     });    
     return true;
@@ -1124,8 +1269,11 @@ let App = {
         await App.requestAccounts();
         App.hookEvents();
 
-      } catch (error) {       
-        App.updateStatus("User denied account access: " + error);     
+      } catch (error) {
+        let msg = App.getErrorMsg(error);
+        App.updateStatus("User denied account access: " + msg);
+        let timestamp = App.getTimestamp();
+        App.updateLog(timestamp, msg);     
       }   
   },
 
@@ -1136,11 +1284,9 @@ let App = {
       try {
         await fn();
       } catch (error) {
-        if (typeof error === "object") {
-          msg = error.message;
-        } else {
-          msg = error;
-        }
+        msg = App.getErrorMsg(error);
+        let timestamp = App.getTimestamp();
+        App.updateLog(timestamp, msg);
       }
     } finally {
       App.updateStatus(`Call to ${name} completed. ${msg}`);

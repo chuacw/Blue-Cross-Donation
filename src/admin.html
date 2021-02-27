@@ -13,6 +13,16 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@3.3.7/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="css/bluecross-new.css" rel="stylesheet">
 
+  <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
+  <script defer src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+
+  <script defer src="https://cdn.jsdelivr.net/npm/bootstrap@3.3.7/dist/js/bootstrap.min.js"></script>
+
+  <script defer src="https://cdn.jsdelivr.net/npm/web3@1.3.3/dist/web3.min.js"></script>
+
+  <script defer src="https://cdn.jsdelivr.net/npm/@truffle/contract@4.3.5/dist/truffle-contract.js"></script>
+  <script defer src="./js/donation.js"></script>
+
 </head>
 
 <body>
@@ -42,6 +52,7 @@
           <label id="ContractBalanceValue">Please wait... </label><label id="AdminFeeLabel">&nbsp;| Admin fee: </label>
           <label id="AdminFeeValue">Please wait... </label><label id="AdminFeeLabel">&nbsp;| Refund allowed: </label>
           <label id="RefundOkValue">Please wait... </label>
+
         </div>
 
       </div>
@@ -63,7 +74,10 @@
         <input style='width: 10em' type="number" id="edAdminFee" min="0.01" max="10.00" step=".01" value="0.06"> &nbsp; &nbsp;
         <button class="btn btn-default" id="btnSetAdminFee" disabled>Set Admin Fee</button>  
         <button class="btn btn-default" style="visibility: hidden;"></button> &nbsp; &nbsp;
-        <button class="btn btn-default" id="btnToggleRefund" disabled>Toggle Refund</button> &nbsp; &nbsp;
+        <button class="btn btn-default" id="btnToggleRefund" disabled>Toggle Refund</button> &nbsp; &nbsp; <br />
+        <label for="edNewAddress">New owner address: </label>
+        <input style='width: 23em' type="text" id="edNewAddress" disabled>
+        <button class="btn btn-default" id="btnChangeOwner" disabled>Change owner</button>
       </div>
       <hr />
     </div>
@@ -74,15 +88,7 @@
 
   </div>
  
-  <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
-  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
-  <!--script defer src="./js/bootstrap.min.js"></script-->
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@3.3.7/dist/js/bootstrap.min.js"></script>
-  <!--script defer src="./js/web3.min.js"></script-->
-  <script src="https://cdn.jsdelivr.net/npm/web3@1.3.3/dist/web3.min.js"></script>
-  <!-- script defer src="./js/truffle-contract.min.js"></script-->
-  <script src="https://cdn.jsdelivr.net/npm/@truffle/contract@4.3.5/dist/truffle-contract.js"></script>
-  <script src="./js/donation.js"></script>
+
 </body>
 
 </html>
